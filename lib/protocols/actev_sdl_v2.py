@@ -183,9 +183,8 @@ class ActEV_SDL_V2(Default):
     
 
     def compute_aggregate_det_points_and_measures(self, records, factorization_func, rfa_denom_func, uniq_conf, rfa_targets, nmide_targets, fa_targets, default_factorizations = []):
-        def _r(init, item):
-            p, t, fa, m = init
-            factorization, recs = item
+        def _r(factorization, recs):
+            p, t, fa, m = {}, {}, [], []
             f={}
             det_points, tfa_det_points, fa_data, measures = self.compute_det_points_and_measures(recs, rfa_denom_func(recs), uniq_conf, rfa_targets, nmide_targets, fa_targets, self.scoring_parameters["wpmiss.denominator"], self.scoring_parameters["wpmiss.numerator"])
             p["-".join(factorization)] = det_points
@@ -209,7 +208,14 @@ class ActEV_SDL_V2(Default):
             return (p, t, fa, m)
 
         grouped = merge_dicts({ k: [] for k in default_factorizations }, group_by_func(factorization_func, records))
-        return reduce(_r, grouped.iteritems(), ({}, {}, [], []))
+        pool = multiprocessing.Pool(initializer=worker_init, initargs=(_r,))
+        p, t, fa, m = zip(*pool.map(worker, grouped.iteritems(), chunksize=1))
+        pool.close()
+        p = {k: v for i in p for k, v in i.iteritems()}
+        t = {k: v for i in t for k, v in i.iteritems()}
+        fa = [j for i in fa for j in i]
+        m = [j for i in m for j in i]
+        return p, t, fa, m
 
     def compute_record_means(self, records, selected_measures = None):
         raw_means = self.compute_means(records, selected_measures)

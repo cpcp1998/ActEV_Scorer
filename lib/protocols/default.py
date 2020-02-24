@@ -42,6 +42,14 @@ from alignment import *
 from helpers import *
 from datacontainer import DataContainer
 
+import multiprocessing
+_func = None
+def worker_init(func):
+    global _func
+    _func = func
+def worker(args):
+    return _func(*args)
+
 class Default(object):
     @classmethod
     def get_schema_fn(cls):
@@ -82,8 +90,8 @@ class Default(object):
         ref_by_act = group_by_func(activity_getter, reference_activities)
         sys_by_act = group_by_func(activity_getter, system_activities)
 
-        alignment_recs = []
-        for activity, activity_properties in self.activity_index.iteritems():
+        def alignment_worker(activity, activity_properties):
+            alignment_recs = []
             refs = ref_by_act.get(activity, [])
             syss = sys_by_act.get(activity, [])
 
@@ -101,6 +109,12 @@ class Default(object):
                 alignment_recs.extend(m)
                 alignment_recs.extend(f)
 
+            return alignment_recs
+
+        pool = multiprocessing.Pool(initializer=worker_init, initargs=(alignment_worker,))
+        alignment_recs = pool.map(worker, self.activity_index.iteritems(), chunksize=1)
+        pool.close()
+        alignment_recs = [j for i in alignment_recs for j in i]
         return alignment_recs
 
     def compute_measures(self, record, measures):
